@@ -21,7 +21,6 @@ Add this in your REMS `config.edn`:
 ## Running locally
 You can test your installation locally. Pick some `<BUILD_NAME>` and `<CONTAINER_NAME>` and run:
 ```
-cd rems/resources/addons/rems_event_handler
 docker build -t <BUILD_NAME> .
 docker run --rm --network="host" --name <CONTAINER_NAME> <BUILD_NAME>
 ```
