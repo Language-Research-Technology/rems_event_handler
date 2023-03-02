@@ -1,12 +1,45 @@
 # REMS Event Handler
 
-A simple HTTP server listening REMS event notifications.
+A simple HTTP server listening for REMS event notifications.
 On notification, it attempts to handle the event.
 
+Events which could be handled are as follows:
+- `application.event/applicant-changed`
+- `application.event/approved`
+- `application.event/closed`
+- `application.event/copied-from`
+- `application.event/copied-to`
+- `application.event/created`
+- `application.event/decided`
+- `application.event/decider-invited`
+- `application.event/decider-joined`
+- `application.event/decision-requested`
+- `application.event/deleted`
+- `application.event/draft-saved`
+- `application.event/expiration-notifications-sent`
+- `application.event/external-id-assigned`
+- `application.event/licenses-accepted`
+- `application.event/licenses-added`
+- `application.event/member-added`
+- `application.event/member-invited`
+- `application.event/member-joined`
+- `application.event/member-removed`
+- `application.event/member-uninvited`
+- `application.event/rejected`
+- `application.event/remarked`
+- `application.event/resources-changed`
+- `application.event/returned`
+- `application.event/review-requested`
+- `application.event/reviewed`
+- `application.event/reviewer-invited`
+- `application.event/reviewer-joined`
+- `application.event/revoked`
+- `application.event/submitted`
+
 ## Pre-requirements for REMS
-You will need to create the `event-handler-user` user (create using API/swagger). This must match the user you configure
-in the `rems_admin_userid` value in the `config.ini` file. This is important to prevent unwanted recursion in the 
-`application.event/revoked` event when the script revokes approved applications.
+You will need to create the `event-handler-user` user (create using API/swagger). **Note that this must match the user 
+you configure in the `rems_admin_userid` value in the `config.ini` file.** This is important to prevent unwanted
+recursion in the `application.event/revoked` event when the script revokes approved applications.
 
 ## Specific Event Handlers
 - On `application.event/created` notification, it tries to delete the current draft application if an open application 
@@ -14,10 +47,10 @@ already exists with the same user_id and resource_id.
 - On `application.event/submitted` notification, it tries to reject or revoke the current submitted application if an open 
 application already exists with the same user_id and resource_id.
 - On `application.event/revoked` notification, it tries to revoke any approved applications with the same user_id and 
-resource_id.
+resource_id. There is a pre-check to ensure that the event was not triggered by the `event-handler-user` user in order
+to prevent unwanted recursion which would always revoke everything.
 
 ## Installation
-
 See [config.ini](config.ini) for an example of a configuration file that must be supplied. 
 
 Add this in your REMS `config.edn`:
