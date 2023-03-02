@@ -72,12 +72,14 @@ def get_entitlement_application_ids(user_id, resource_id, event_id):
         'x-rems-user-id': rems_admin_userid,
     }
     log.info(f'{event_id} Retrieving entitlements for user ID {user_id} and resource ID {resource_id}')
+    log.debug(f'{event_id} entitlements_url: {entitlements_url}, params: {params}, headers={headers}')
     response = requests.get(
         url=entitlements_url,
         params=params,
         headers=headers,
     )
     log.info(f'{event_id} Response: {response.status_code} {response.reason}')
+    log.debug(f'{event_id} response.text: {response.text}')
     if response.status_code != 200:
         raise Exception(f'Response code {response.status_code} received when retrieving entitlements')
 
