@@ -87,6 +87,12 @@ def revoke_entitlements(user_id, resource_id, event_id):
 def application_revoked_event_handler(data, event_id):
     """Handle application.event/revoked event - added to REMSEventHandler.EVENT_HANDLERS"""
 
+    # Prevent unwanted recursion
+    if data["event/actor"] == rems_admin_userid:
+        log.info(
+            f'{event_id} Not handling application.event/revoked event triggered by user {rems_admin_userid}')
+        return
+
     # Pull required information from data structure in request body
     user_id = data['event/application']['application/applicant']['userid']
     resource_id = data['event/application']['application/resources'][0]['resource/ext-id']
@@ -130,27 +136,25 @@ def get_open_applications(user_id, resource_id, event_id):
 
 def process_application(operation, application_id, comment, event_id):
     """Process application specified by application_id"""
-    assert operation in ['delete', 'reject', 'revoke'], f'Invalid application operation "{operation}"'
-    reject_url = f'{rems_url}/api/applications/{operation}'
+    assert operation in ['reject', 'revoke'], f'Invalid application operation "{operation}"'
+    operation_url = f'{rems_url}/api/applications/{operation}'
     headers = {
         'accept': 'application/json',
         'x-rems-api-key': rems_admin_api_key,
         'x-rems-user-id': rems_admin_userid,
         'Content-Type': 'application/json',
     }
-    data = {
-        "application-id": application_id,
-    }
-    if operation != 'delete':
-        if comment:
-            data["comment"] = comment
-        data["attachments"] = []
+    data = json.dumps(
+        {
+            "application-id": application_id,
+            "comment": comment,
+            "attachments": [],
+        }
+    )
 
-    data = json.dumps(data)
-
-    log.debug(f'{event_id} reject_url: {reject_url}, headers={headers}, data={data}')
+    log.debug(f'{event_id} operation_url: {operation_url}, headers={headers}, data={data}')
     response = requests.post(
-        url=reject_url,
+        url=operation_url,
         headers=headers,
         data=data,
     )
@@ -160,38 +164,64 @@ def process_application(operation, application_id, comment, event_id):
         raise Exception(f'Response code {response.status_code} received. Reason: {response.reason}')
 
     if not response.json().get("success"):
-        raise Exception(f'{event_id} Application rejection failed. Errors: {response.json().get("errors") or ""}')
+        raise Exception(f'{event_id} Application {operation} failed. Errors: {response.json().get("errors") or ""}')
 
 
-def handle_duplicate_application(application_id, user_id, resource_id, application_operation, event_id):
+def delete_draft_application(application_id, user_id, event_id):
+    """Delete draft application specified by application_id"""
+    operation_url = f'{rems_url}/api/applications/delete'
+    headers = {
+        'accept': 'application/json',
+        'x-rems-api-key': rems_admin_api_key,
+        'x-rems-user-id': user_id,  # Must impersonate draft application owner
+        'Content-Type': 'application/json',
+    }
+    data = json.dumps(
+        {
+            "application-id": application_id,
+        }
+    )
+
+    log.debug(f'{event_id} operation_url: {operation_url}, headers={headers}, data={data}')
+    response = requests.post(
+        url=operation_url,
+        headers=headers,
+        data=data,
+    )
+    log.debug(f'{event_id} response.text: {response.text}')
+
+    if response.status_code != 200:
+        raise Exception(f'Response code {response.status_code} received. Reason: {response.reason}')
+
+    if not response.json().get("success"):
+        raise Exception(f'{event_id} Application delete failed. Errors: {response.json().get("errors") or ""}')
+
+
+def handle_duplicate_application(application_id, user_id, resource_id, event_id):
     """
     Reject applications for new applications for specified user_id and resource_id if open applications exist
     Will report errors and continue processing
     """
     if get_open_applications(user_id, resource_id, event_id):
-        try:
-            log.info(f'{event_id} Rejecting application {application_id}')
-            process_application(application_operation, 
-                                application_id, 
-                                "Application rejected by auto-rejecter after existing open applications found", 
-                                event_id
-                                )
-            log.info(f'{event_id} Rejected application {application_id}')
-        except Exception as e:
-            log.warning(f'{event_id} Failure rejecting application_id {application_id}: {e}')
+        # Manually approved stuff needs to be rejected, auto-approved stuff revoked after bot accepts it
+        for application_operation in ['reject', 'revoke']:
+            try:
+                log.info(f'{event_id} Attempting to {application_operation} application {application_id}')
+                process_application(application_operation,
+                                    application_id,
+                                    "Application rejected by auto-rejecter after existing open applications found",
+                                    event_id
+                                    )
+                log.info(f'{event_id} {application_operation} application successful {application_id}')
+                break
+            except Exception as e:
+                log.warning(f'{event_id} Failure to {application_operation} application_id {application_id}: {e}')
     else:
         log.info(f'{event_id} Aapplication {application_id} has no open duplicates')
 
 
-def new_application_event_handler(data, event_id):
-    """Handle application.event/created event - added to REMSEventHandler.EVENT_HANDLERS"""
-
-    # Pull required information from data structure in request body
-    event_type = data['event/type']
-    
-    application_operation = 'revoke'
-    if 'created' in event_type:
-        application_operation = 'delete'
+def application_submitted_event_handler(data, event_id):
+    """Handle application.event/submitted event - added to REMSEventHandler.EVENT_HANDLERS"""
 
     user_id = data['event/application']['application/applicant']['userid']
     resource_id = data['event/application']['application/resources'][0]['resource/ext-id']
@@ -199,7 +229,19 @@ def new_application_event_handler(data, event_id):
     log.info(
         f'{event_id} Checking existing applications for user id: {user_id}, resource_id: {resource_id}, application_id: {application_id}')
 
-    handle_duplicate_application(application_id, user_id, resource_id, application_operation, event_id)
+    handle_duplicate_application(application_id, user_id, resource_id, event_id)
+
+
+def application_created_event_handler(data, event_id):
+    """Handle application.event/created event - added to REMSEventHandler.EVENT_HANDLERS"""
+
+    user_id = data['event/application']['application/applicant']['userid']
+    resource_id = data['event/application']['application/resources'][0]['resource/ext-id']
+    application_id = data['event/application']['application/id']
+    log.info(
+        f'{event_id} Checking existing applications for user id: {user_id}, resource_id: {resource_id}, application_id: {application_id}')
+
+    delete_draft_application(application_id, user_id, event_id)
 
 
 class REMSEventHandler(http.server.BaseHTTPRequestHandler):
@@ -210,7 +252,7 @@ class REMSEventHandler(http.server.BaseHTTPRequestHandler):
         # 'application.event/closed': None,
         # 'application.event/copied-from': None,
         # 'application.event/copied-to': None,
-        'application.event/created': new_application_event_handler,
+        'application.event/created': application_created_event_handler,
         # 'application.event/decided': None,
         # 'application.event/decider-invited': None,
         # 'application.event/decider-joined': None,
@@ -235,7 +277,7 @@ class REMSEventHandler(http.server.BaseHTTPRequestHandler):
         # 'application.event/reviewer-invited': None,
         # 'application.event/reviewer-joined': None,
         'application.event/revoked': application_revoked_event_handler,
-        'application.event/submitted': new_application_event_handler,
+        'application.event/submitted': application_submitted_event_handler,
     }
 
     def do_PUT(self):
