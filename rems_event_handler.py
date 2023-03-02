@@ -81,7 +81,9 @@ def get_entitlement_application_ids(user_id, resource_id, event_id):
     if response.status_code != 200:
         raise Exception(f'Response code {response.status_code} received when retrieving entitlements')
 
-    return [entitlement['application-id'] for entitlement in response.json()]
+    applications = [entitlement['application-id'] for entitlement in response.json()]
+    log.debug(f'{event_id} applications: {applications}')
+    return applications
 
 
 def revoke_entitlements(user_id, resource_id, event_id):
