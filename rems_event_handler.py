@@ -32,37 +32,6 @@ except KeyError as e:
     exit(1)
 
 
-def revoke_application(application_id, event_id):
-    """Revoke application specified by application_id"""
-    revoke_url = f'{rems_url}/api/applications/revoke'
-    headers = {
-        'accept': 'application/json',
-        'x-rems-api-key': rems_admin_api_key,
-        'x-rems-user-id': rems_admin_userid,
-        'Content-Type': 'application/json',
-    }
-    data = json.dumps(
-        {
-            "application-id": application_id,
-            "comment": "Application revoked by auto-revoker after user added to deny list",
-            "attachments": []
-        }
-    )
-    log.debug(f'{event_id} revoke_url: {revoke_url}, headers={headers}, data={data}')
-    response = requests.post(
-        url=revoke_url,
-        headers=headers,
-        data=data,
-    )
-    log.debug(f'{event_id} response.text: {response.text}')
-
-    if response.status_code != 200:
-        raise Exception(f'Response code {response.status_code} received. Reason: {response.reason}')
-
-    if not response.json().get("success"):
-        raise Exception(f'{event_id} Revokation failed. Errors: {response.json().get("errors") or ""}')
-
-
 def get_entitlement_application_ids(user_id, resource_id, event_id):
     """Return list of application IDs for entitlements associated with user_id and resource_id"""
     entitlements_url = f'{rems_url}/api/entitlements'
@@ -103,7 +72,11 @@ def revoke_entitlements(user_id, resource_id, event_id):
     for application_id in application_ids:
         try:
             log.info(f'{event_id} Revoking application {application_id}')
-            revoke_application(application_id, event_id)
+            process_application('revoke',
+                                application_id,
+                                "Application revoked by auto-revoker after identical application revoked",
+                                event_id
+                                )
             log.info(f'{event_id} Revoked application {application_id}')
             revoked_count += 1
         except Exception as e:
@@ -155,9 +128,10 @@ def get_open_applications(user_id, resource_id, event_id):
     return open_applications
 
 
-def reject_application(application_id, event_id):
-    """Reject application specified by application_id"""
-    reject_url = f'{rems_url}/api/applications/reject'
+def process_application(operation, application_id, comment, event_id):
+    """Process application specified by application_id"""
+    assert operation in ['delete', 'reject', 'revoke'], f'Invalid application operation "{operation}"'
+    reject_url = f'{rems_url}/api/applications/{operation}'
     headers = {
         'accept': 'application/json',
         'x-rems-api-key': rems_admin_api_key,
@@ -167,7 +141,7 @@ def reject_application(application_id, event_id):
     data = json.dumps(
         {
             "application-id": application_id,
-            "comment": "Application rejected by auto-rejecter after existing open applications found",
+            "comment": comment,
             "attachments": []
         }
     )
@@ -186,7 +160,7 @@ def reject_application(application_id, event_id):
         raise Exception(f'{event_id} Application rejection failed. Errors: {response.json().get("errors") or ""}')
 
 
-def reject_duplicate_application(application_id, user_id, resource_id, event_id):
+def handle_duplicate_application(application_id, user_id, resource_id, application_operation, event_id):
     """
     Reject applications for new applications for specified user_id and resource_id if open applications exist
     Will report errors and continue processing
@@ -194,7 +168,11 @@ def reject_duplicate_application(application_id, user_id, resource_id, event_id)
     if get_open_applications(user_id, resource_id, event_id):
         try:
             log.info(f'{event_id} Rejecting application {application_id}')
-            revoke_application(application_id, event_id)
+            process_application(application_operation, 
+                                application_id, 
+                                "Application rejected by auto-rejecter after existing open applications found", 
+                                event_id
+                                )
             log.info(f'{event_id} Rejected application {application_id}')
         except Exception as e:
             log.warning(f'{event_id} Failure rejecting application_id {application_id}: {e}')
@@ -202,17 +180,23 @@ def reject_duplicate_application(application_id, user_id, resource_id, event_id)
         log.info(f'{event_id} Aapplication {application_id} has no open duplicates')
 
 
-def application_submitted_event_handler(data, event_id):
+def new_application_event_handler(data, event_id):
     """Handle application.event/created event - added to REMSEventHandler.EVENT_HANDLERS"""
 
     # Pull required information from data structure in request body
+    event_type = data['event/type']
+    
+    application_operation = 'revoke'
+    if 'created' in event_type:
+        application_operation = 'delete'
+
     user_id = data['event/application']['application/applicant']['userid']
     resource_id = data['event/application']['application/resources'][0]['resource/ext-id']
     application_id = data['event/application']['application/id']
     log.info(
         f'{event_id} Checking existing applications for user id: {user_id}, resource_id: {resource_id}, application_id: {application_id}')
 
-    reject_duplicate_application(application_id, user_id, resource_id, event_id)
+    handle_duplicate_application(application_id, user_id, resource_id, application_operation, event_id)
 
 
 class REMSEventHandler(http.server.BaseHTTPRequestHandler):
@@ -223,7 +207,7 @@ class REMSEventHandler(http.server.BaseHTTPRequestHandler):
         # 'application.event/closed': None,
         # 'application.event/copied-from': None,
         # 'application.event/copied-to': None,
-        # 'application.event/created': None,
+        'application.event/created': new_application_event_handler,
         # 'application.event/decided': None,
         # 'application.event/decider-invited': None,
         # 'application.event/decider-joined': None,
@@ -248,7 +232,7 @@ class REMSEventHandler(http.server.BaseHTTPRequestHandler):
         # 'application.event/reviewer-invited': None,
         # 'application.event/reviewer-joined': None,
         'application.event/revoked': application_revoked_event_handler,
-        'application.event/submitted': application_submitted_event_handler,
+        'application.event/submitted': new_application_event_handler,
     }
 
     def do_PUT(self):
