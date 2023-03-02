@@ -91,9 +91,7 @@ def revoke_entitlements(user_id, resource_id, event_id):
     """
     application_ids = get_entitlement_application_ids(user_id, resource_id, event_id)
     revoked_count = 0
-    # Only revoke the first application. The event handler should be called recursively
-    if application_ids:
-        application_id = application_ids[0]
+    for application_id in application_ids:
         try:
             log.info(f'{event_id} Revoking application {application_id}')
             revoke_application(application_id)
