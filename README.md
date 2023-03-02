@@ -49,8 +49,9 @@ recursion in the `application.event/revoked` event when the script revokes appro
 - `application.event/submitted` - rejects or revokes the current submitted application if an open application already
   exists with the same user_id and resource_id.
 - `application.event/revoked` - rejects or revokes any approved applications with the same user_id and resource_id.
-  There is a pre-check to ensure that the event was not triggered by the `event-handler-user` user in order to prevent
-  unwanted recursion which would always revoke everything.
+  There is a pre-check to ensure that the event was not triggered by the `event-handler-user` user (or whatever was
+  configured in the `rems_admin_userid` value in the `config.ini` file.) in order to prevent unwanted recursion which
+  would cause ALL approved applications to be revoked.
 
 ## Installation
 
@@ -83,4 +84,4 @@ docker run --rm --network="host" --name <CONTAINER_NAME> <BUILD_NAME>
 ```
 
 Trigger the desired event in REMS and check that the rems_event_handler log looks ok. Note that the actual request to
-REMS might fail from your local environment depending your configuration. 
+REMS might fail from your local environment depending on your configuration. 
