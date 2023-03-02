@@ -194,7 +194,7 @@ def reject_duplicate_application(application_id, user_id, resource_id, event_id)
     if get_open_applications(user_id, resource_id, event_id):
         try:
             log.info(f'{event_id} Rejecting application {application_id}')
-            reject_application(application_id, event_id)
+            revoke_application(application_id, event_id)
             log.info(f'{event_id} Rejected application {application_id}')
         except Exception as e:
             log.warning(f'{event_id} Failure rejecting application_id {application_id}: {e}')
