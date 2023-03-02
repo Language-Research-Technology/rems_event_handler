@@ -138,13 +138,16 @@ def process_application(operation, application_id, comment, event_id):
         'x-rems-user-id': rems_admin_userid,
         'Content-Type': 'application/json',
     }
-    data = json.dumps(
-        {
-            "application-id": application_id,
-            "comment": comment,
-            "attachments": []
-        }
-    )
+    data = {
+        "application-id": application_id,
+    }
+    if operation != 'delete':
+        if comment:
+            data["comment"] = comment
+        data["attachments"] = []
+
+    data = json.dumps(data)
+
     log.debug(f'{event_id} reject_url: {reject_url}, headers={headers}, data={data}')
     response = requests.post(
         url=reject_url,
