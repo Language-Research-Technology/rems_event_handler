@@ -107,11 +107,13 @@ def get_open_applications(user_id, resource_id, application_id, event_id):
     """
     Return list of application IDs for open applications associated with user_id and resource_id
     "Open" is defined as state:approved OR state:applied OR state:returned OR state:draft
-    We need to filter out the current application
+    We need to filter out the current application by ID, so we do that in the query
     """
     applications_url = f'{rems_url}/api/applications'
     params = {
-        'query': f'resource:"{resource_id}" AND applicant:"{user_id}" AND (state:approved OR state:applied OR state:returned OR state:draft)'
+        'query': f'resource:"{resource_id}" AND applicant:"{user_id}" '
+                 'AND (state:approved OR state:applied OR state:returned OR state:draft) '
+                 f'AND NOT id:{application_id}'
     }
     headers = {
         'accept': 'application/json',
@@ -131,9 +133,7 @@ def get_open_applications(user_id, resource_id, application_id, event_id):
         raise Exception(f'Response code {response.status_code} received when retrieving open applications')
 
     # Filter out current application
-    open_applications = [application['application/id'] for application in response.json()
-                         if application['application/id'] != application_id
-                         ]
+    open_applications = [application['application/id'] for application in response.json()]
     log.debug(f'{event_id} open_applications: {open_applications}')
     return open_applications
 
