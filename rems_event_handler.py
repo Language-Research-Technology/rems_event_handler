@@ -103,10 +103,11 @@ def application_revoked_event_handler(data, event_id):
         f'{event_id} Revoked {revoked_count} entitlements for user id: {user_id}, resource_id: {resource_id}')
 
 
-def get_open_applications(user_id, resource_id, event_id):
+def get_open_applications(user_id, resource_id, application_id, event_id):
     """
     Return list of application IDs for open applications associated with user_id and resource_id
     "Open" is defined as state:approved OR state:applied OR state:returned OR state:draft
+    We need to filter out the current application
     """
     applications_url = f'{rems_url}/api/applications'
     params = {
@@ -118,7 +119,7 @@ def get_open_applications(user_id, resource_id, event_id):
         'x-rems-user-id': rems_admin_userid,
     }
     log.info(f'{event_id} Retrieving open applications for user ID {user_id} and resource ID {resource_id}')
-    log.debug(f'{event_id} entitlements_url: {applications_url}, params: {params}, headers={headers}')
+    log.debug(f'{event_id} applications_url: {applications_url}, params: {params}, headers={headers}')
     response = requests.get(
         url=applications_url,
         params=params,
@@ -129,7 +130,10 @@ def get_open_applications(user_id, resource_id, event_id):
     if response.status_code != 200:
         raise Exception(f'Response code {response.status_code} received when retrieving open applications')
 
-    open_applications = [application['application/id'] for application in response.json()]
+    # Filter out current application
+    open_applications = [application['application/id'] for application in response.json()
+                         if application['application/id'] != application_id
+                         ]
     log.debug(f'{event_id} open_applications: {open_applications}')
     return open_applications
 
@@ -202,7 +206,7 @@ def handle_duplicate_application(application_id, user_id, resource_id, event_id)
     Reject applications for new applications for specified user_id and resource_id if open applications exist
     Will report errors and continue processing
     """
-    if get_open_applications(user_id, resource_id, event_id):
+    if get_open_applications(user_id, resource_id, application_id, event_id):
         # Manually approved stuff needs to be rejected, auto-approved stuff revoked after bot accepts it
         for application_operation in ['reject', 'revoke']:
             try:
